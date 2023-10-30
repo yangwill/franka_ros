@@ -35,7 +35,7 @@ class TorquePassthroughController : public controller_interface::MultiInterfaceC
   Eigen::Matrix<double, 7, 1> clampTorques(
       Eigen::Matrix<double, 7, 1>& u_des) const;
 
-  std::mutex tau_d_mutex_;
+  std::mutex u_des_mutex_;
   hardware_interface::PositionJointInterface* position_joint_interface_;
   std::vector<hardware_interface::JointHandle> position_joint_handles_;
   std::vector<hardware_interface::JointHandle> joint_handles_;

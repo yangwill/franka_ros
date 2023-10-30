@@ -12,7 +12,7 @@
 
 namespace franka_example_controllers {
 
-bool JointPositionExampleController::init(hardware_interface::RobotHW* robot_hardware,
+bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardware,
                                           ros::NodeHandle& node_handle) {
 
   torque_command_subscriber_ = node_handle.subscribe(
@@ -71,15 +71,15 @@ bool JointPositionExampleController::init(hardware_interface::RobotHW* robot_har
   position_joint_interface_ = robot_hardware->get<hardware_interface::PositionJointInterface>();
   if (position_joint_interface_ == nullptr) {
     ROS_ERROR(
-        "JointPositionExampleController: Error getting position joint interface from hardware!");
+        "TorquePassthroughController: Error getting position joint interface from hardware!");
     return false;
   }
   std::vector<std::string> joint_names;
   if (!node_handle.getParam("joint_names", joint_names)) {
-    ROS_ERROR("JointPositionExampleController: Could not parse joint names");
+    ROS_ERROR("TorquePassthroughController: Could not parse joint names");
   }
   if (joint_names.size() != 7) {
-    ROS_ERROR_STREAM("JointPositionExampleController: Wrong number of joint names, got "
+    ROS_ERROR_STREAM("TorquePassthroughController: Wrong number of joint names, got "
                      << joint_names.size() << " instead of 7 names!");
     return false;
   }
@@ -89,7 +89,7 @@ bool JointPositionExampleController::init(hardware_interface::RobotHW* robot_har
       position_joint_handles_[i] = position_joint_interface_->getHandle(joint_names[i]);
     } catch (const hardware_interface::HardwareInterfaceException& e) {
       ROS_ERROR_STREAM(
-          "JointPositionExampleController: Exception getting joint handles: " << e.what());
+          "TorquePassthroughController: Exception getting joint handles: " << e.what());
       return false;
     }
   }
@@ -97,7 +97,7 @@ bool JointPositionExampleController::init(hardware_interface::RobotHW* robot_har
   for (size_t i = 0; i < q_start.size(); i++) {
     if (std::abs(position_joint_handles_[i].getPosition() - q_start[i]) > 0.1) {
       ROS_ERROR_STREAM(
-          "JointPositionExampleController: Robot is not in the expected starting position for "
+          "TorquePassthroughController: Robot is not in the expected starting position for "
           "running this example. Run `roslaunch franka_example_controllers move_to_start.launch "
           "robot_ip:=<robot-ip> load_gripper:=<has-attached-gripper>` first.");
       return false;
@@ -109,12 +109,12 @@ bool JointPositionExampleController::init(hardware_interface::RobotHW* robot_har
   return true;
 }
 
-void JointPositionExampleController::starting(const ros::Time& /* time */) {
-  std::lock_guard<std::mutex> tau_d_mutex_lock(tau_d_mutex_);
-  tau_d_.setZero();
+void TorquePassthroughController::starting(const ros::Time& /* time */) {
+  std::lock_guard<std::mutex> u_des_mutex_lock(u_des_mutex_);
+  u_des_.setZero();
 }
 
-void JointPositionExampleController::update(const ros::Time& /*time*/,
+void TorquePassthroughController::update(const ros::Time& /*time*/,
                                             const ros::Duration& period) {
   franka::RobotState robot_state = state_handle_->getRobotState();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
@@ -125,11 +125,11 @@ void JointPositionExampleController::update(const ros::Time& /*time*/,
   tau_d.setZero();
 
   // Store previous desired values
-  std::unique_lock<std::mutex> tau_d_mutex_lock(tau_d_mutex_);
+  std::unique_lock<std::mutex> u_des_mutex_lock(u_des_mutex_);
   for (int i = 0; i < 7; i++){
-    tau_d(i) = tau_d_(i);
+    tau_d(i) = u_des_(i);
   }
-  tau_d_mutex_lock.unlock();
+  u_des_mutex_lock.unlock();
 
   // Get current torque values
   Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(robot_state.tau_J_d.data());
@@ -159,13 +159,13 @@ void JointPositionExampleController::update(const ros::Time& /*time*/,
 void TorquePassthroughController::handleTorqueCommand(
     const std_msgs::Float64MultiArray& msg) {
   
-  std::lock_guard<std::mutex> tau_d_mutex_lock(tau_d_mutex_);
+  std::lock_guard<std::mutex> u_des_mutex_lock(u_des_mutex_);
   for (int i = 0; i < 7; i++){
-    tau_d_(i) = msg.data[i];
+    u_des_(i) = msg.data[i];
   }
 }
 
 }  // namespace franka_example_controllers
 
-PLUGINLIB_EXPORT_CLASS(franka_example_controllers::JointPositionExampleController,
+PLUGINLIB_EXPORT_CLASS(franka_example_controllers::TorquePassthroughController,
                        controller_interface::ControllerBase)
