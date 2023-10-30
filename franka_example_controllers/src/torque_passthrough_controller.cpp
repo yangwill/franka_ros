@@ -15,11 +15,11 @@ namespace franka_example_controllers {
 bool JointPositionExampleController::init(hardware_interface::RobotHW* robot_hardware,
                                           ros::NodeHandle& node_handle) {
 
-  sub_torque_commands_ = node_handle.subscribe(
-      "/c3/franka_input", 1, &TorquePassthroughController::torqueCommandCallback, this,
+  torque_command_subscriber_ = node_handle.subscribe(
+      "/c3/franka_input", 1, &TorquePassthroughController::handleTorqueCommand, this,
       ros::TransportHints().reliable().tcpNoDelay());
 
-  pub_joint_states_ = node_handle.advertise<sensor_msgs::JointState>("/franka/joint_states", 1);
+  joint_states_publisher_ = node_handle.advertise<sensor_msgs::JointState>("/franka/joint_states", 1);
 
   std::string arm_id;
   if (!node_handle.getParam("arm_id", arm_id)) {
@@ -112,7 +112,6 @@ bool JointPositionExampleController::init(hardware_interface::RobotHW* robot_har
 void JointPositionExampleController::starting(const ros::Time& /* time */) {
   std::lock_guard<std::mutex> tau_d_mutex_lock(tau_d_mutex_);
   tau_d_.setZero();
-  elapsed_time_ = ros::Duration(0.0);
 }
 
 void JointPositionExampleController::update(const ros::Time& /*time*/,
@@ -132,15 +131,16 @@ void JointPositionExampleController::update(const ros::Time& /*time*/,
   }
   tau_d_mutex_lock.unlock();
 
-  // Get
+  // Get current torque values
   Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(robot_state.tau_J_d.data());
 
   clampTorques(tau_d);
   saturateTorqueRate(tau_d, tau_J_d);
 
-
-  // send the torques
+  // send the torques to the hardware
+  // echo the command to ensure the values are as intended
   for (size_t i = 0; i < 7; ++i) {
+    std::cout << "joint " << i << ": " << tau_d(i) << std::endl;
     joint_handles_[i].setCommand(u_des_(i));
   }
 
@@ -154,6 +154,15 @@ void JointPositionExampleController::update(const ros::Time& /*time*/,
     msg.effort[i] = tau(i);
   }
   joint_states_publisher_.publish(msg);
+}
+
+void TorquePassthroughController::handleTorqueCommand(
+    const std_msgs::Float64MultiArray& msg) {
+  
+  std::lock_guard<std::mutex> tau_d_mutex_lock(tau_d_mutex_);
+  for (int i = 0; i < 7; i++){
+    tau_d_(i) = msg.data[i];
+  }
 }
 
 }  // namespace franka_example_controllers

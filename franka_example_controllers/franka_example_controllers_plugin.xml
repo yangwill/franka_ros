@@ -1,4 +1,9 @@
 <library path="lib/libfranka_example_controllers">
+  <class name="franka_example_controllers/TorquePassthroughController" type="franka_example_controllers::TorquePassthroughController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      A controller that receives a ROS torque message and forwards it to the robot hardware
+    </description>
+  </class>
   <class name="franka_example_controllers/JointVelocityExampleController" type="franka_example_controllers::JointVelocityExampleController" base_class_type="controller_interface::ControllerBase">
     <description>
       A controller that executes a short motion based on joint velocities to demonstrate correct usage

@@ -42,8 +42,6 @@ class TorquePassthroughController : public controller_interface::MultiInterfaceC
 
   Eigen::Matrix<double, 8, 1> u_des_;
 
-
-  // ros::Duration elapsed_time_;
   std::array<double, 7> initial_pose_{};
   ros::Subscriber torque_command_subscriber_;   // read torque commands sent from drake
   ros::Publisher joint_states_publisher_;
