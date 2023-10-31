@@ -8,6 +8,7 @@
 #include <hardware_interface/hardware_interface.h>
 #include <hardware_interface/joint_command_interface.h>
 #include <pluginlib/class_list_macros.h>
+#include "sensor_msgs/JointState.h"
 #include <ros/ros.h>
 
 namespace franka_example_controllers {
@@ -16,7 +17,7 @@ bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardwa
                                           ros::NodeHandle& node_handle) {
 
   torque_command_subscriber_ = node_handle.subscribe(
-      "/c3/franka_input", 1, &TorquePassthroughController::handleTorqueCommand, this,
+      "/franka/franka_input", 1, &TorquePassthroughController::handleTorqueCommand, this,
       ros::TransportHints().reliable().tcpNoDelay());
 
   joint_states_publisher_ = node_handle.advertise<sensor_msgs::JointState>("/franka/joint_states", 1);
@@ -34,7 +35,7 @@ bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardwa
     return false;
   }
 
-  auto* state_interface = robot_hw->get<franka_hw::FrankaStateInterface>();
+  auto* state_interface = robot_hardware->get<franka_hw::FrankaStateInterface>();
   if (state_interface == nullptr) {
     ROS_ERROR_STREAM(
         "TorquePassthroughController: Error getting state interface from hardware");
@@ -51,7 +52,7 @@ bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardwa
   }
 
   /// Initialize torque interface
-  auto* effort_joint_interface = robot_hw->get<hardware_interface::EffortJointInterface>();
+  auto* effort_joint_interface = robot_hardware->get<hardware_interface::EffortJointInterface>();
   if (effort_joint_interface == nullptr) {
     ROS_ERROR_STREAM(
         "TorquePassthroughController: Error getting effort joint interface from hardware");
@@ -68,25 +69,16 @@ bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardwa
   }
 
   /// Check Robot Start Position
-  position_joint_interface_ = robot_hardware->get<hardware_interface::PositionJointInterface>();
-  if (position_joint_interface_ == nullptr) {
+  auto position_joint_interface = robot_hardware->get<hardware_interface::PositionJointInterface>();
+  if (position_joint_interface == nullptr) {
     ROS_ERROR(
         "TorquePassthroughController: Error getting position joint interface from hardware!");
-    return false;
-  }
-  std::vector<std::string> joint_names;
-  if (!node_handle.getParam("joint_names", joint_names)) {
-    ROS_ERROR("TorquePassthroughController: Could not parse joint names");
-  }
-  if (joint_names.size() != 7) {
-    ROS_ERROR_STREAM("TorquePassthroughController: Wrong number of joint names, got "
-                     << joint_names.size() << " instead of 7 names!");
     return false;
   }
   position_joint_handles_.resize(7);
   for (size_t i = 0; i < 7; ++i) {
     try {
-      position_joint_handles_[i] = position_joint_interface_->getHandle(joint_names[i]);
+      position_joint_handles_[i] = position_joint_interface->getHandle(joint_names[i]);
     } catch (const hardware_interface::HardwareInterfaceException& e) {
       ROS_ERROR_STREAM(
           "TorquePassthroughController: Exception getting joint handles: " << e.what());
@@ -140,8 +132,7 @@ void TorquePassthroughController::update(const ros::Time& /*time*/,
   // send the torques to the hardware
   // echo the command to ensure the values are as intended
   for (size_t i = 0; i < 7; ++i) {
-    std::cout << "joint " << i << ": " << tau_d(i) << std::endl;
-    joint_handles_[i].setCommand(u_des_(i));
+    // joint_handles_[i].setCommand(u_des_(i));
   }
 
   sensor_msgs::JointState msg;
@@ -156,12 +147,50 @@ void TorquePassthroughController::update(const ros::Time& /*time*/,
   joint_states_publisher_.publish(msg);
 }
 
+Eigen::Matrix<double, 7, 1> TorquePassthroughController::clampTorques(
+    Eigen::Matrix<double, 7, 1>& u_des) const {
+  Eigen::Matrix<double, 7, 1> tau_d_clamped{};
+
+  double limit = 20;
+  double wrist_limit = 2;
+
+  for (size_t i = 0; i < 4; i++) {
+    tau_d_clamped(i) = u_des(i);
+    if (abs(u_des(i)) > limit) {
+      double sign = u_des(i) / abs(u_des(i));
+      tau_d_clamped(i) = sign * limit;
+    }
+  }
+  for (size_t i = 4; i < 7; i++) {
+    tau_d_clamped(i) = u_des(i);
+    if (abs(u_des(i)) > wrist_limit) {
+      double sign = u_des(i) / abs(u_des(i));
+      tau_d_clamped(i) = sign * wrist_limit;
+    }
+  }
+  return tau_d_clamped;
+}
+
+Eigen::Matrix<double, 7, 1> TorquePassthroughController::saturateTorqueRate(
+    Eigen::Matrix<double, 7, 1>& u_des,
+    const Eigen::Matrix<double, 7, 1>& u_current) const {
+  Eigen::Matrix<double, 7, 1> tau_d_saturated{};
+  for (size_t i = 0; i < 7; i++) {
+    double difference = u_des[i] - u_current[i];
+    tau_d_saturated[i] =
+        u_current[i] + std::max(std::min(difference, delta_u_max_), -delta_u_max_);
+  }
+  return tau_d_saturated;
+}
+
 void TorquePassthroughController::handleTorqueCommand(
     const std_msgs::Float64MultiArray& msg) {
   
   std::lock_guard<std::mutex> u_des_mutex_lock(u_des_mutex_);
+  std::cout << "received torque message" << std::endl;
   for (int i = 0; i < 7; i++){
     u_des_(i) = msg.data[i];
+    std::cout << "joint " << i << " torque: " << u_des_(i) << std::endl;
   }
 }
 
