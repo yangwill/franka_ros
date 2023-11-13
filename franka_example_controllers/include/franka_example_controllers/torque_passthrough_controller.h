@@ -39,9 +39,7 @@ class TorquePassthroughController : public controller_interface::MultiInterfaceC
   void handleTorqueCommand(const std_msgs::Float64MultiArray& msg);
 
   std::mutex u_des_mutex_;
-  // hardware_interface::PositionJointInterface* position_joint_interface_;
   std::unique_ptr<franka_hw::FrankaStateHandle> state_handle_;
-  std::vector<hardware_interface::JointHandle> position_joint_handles_;
   std::vector<hardware_interface::JointHandle> joint_handles_;
 
   Eigen::Matrix<double, 8, 1> u_des_;

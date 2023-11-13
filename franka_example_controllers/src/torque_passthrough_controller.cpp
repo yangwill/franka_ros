@@ -44,6 +44,17 @@ bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardwa
   try {
     state_handle_ = std::make_unique<franka_hw::FrankaStateHandle>(
         state_interface->getHandle(arm_id + "_robot"));
+    // Palm up configuration
+    std::array<double, 7> q_start{{-1.3, 1.6, 1.5, -2.1, 1.5, 1.5, -0.8}};
+    for (size_t i = 0; i < q_start.size(); i++) {
+      if (std::abs(state_handle_->getRobotState().q_d[i] - q_start[i]) > 0.1) {
+        ROS_ERROR_STREAM(
+            "TorquePassthroughController: Robot is not in the expected starting position for "
+            "running this example. Run `roslaunch franka_example_controllers move_to_start.launch "
+            "robot_ip:=<robot-ip> load_gripper:=<has-attached-gripper>` first.");
+        return false;
+      }
+    }
   } catch (hardware_interface::HardwareInterfaceException& ex) {
     ROS_ERROR_STREAM(
         "TorquePassthroughController: Exception getting state handle from interface: "
@@ -64,34 +75,6 @@ bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardwa
     } catch (const hardware_interface::HardwareInterfaceException& ex) {
       ROS_ERROR_STREAM(
           "TorquePassthroughController: Exception getting joint handles: " << ex.what());
-      return false;
-    }
-  }
-
-  /// Check Robot Start Position
-  auto position_joint_interface = robot_hardware->get<hardware_interface::PositionJointInterface>();
-  if (position_joint_interface == nullptr) {
-    ROS_ERROR(
-        "TorquePassthroughController: Error getting position joint interface from hardware!");
-    return false;
-  }
-  position_joint_handles_.resize(7);
-  for (size_t i = 0; i < 7; ++i) {
-    try {
-      position_joint_handles_[i] = position_joint_interface->getHandle(joint_names[i]);
-    } catch (const hardware_interface::HardwareInterfaceException& e) {
-      ROS_ERROR_STREAM(
-          "TorquePassthroughController: Exception getting joint handles: " << e.what());
-      return false;
-    }
-  }
-  std::array<double, 7> q_start{{0, -M_PI_4, 0, -3 * M_PI_4, 0, M_PI_2, M_PI_4}};
-  for (size_t i = 0; i < q_start.size(); i++) {
-    if (std::abs(position_joint_handles_[i].getPosition() - q_start[i]) > 0.1) {
-      ROS_ERROR_STREAM(
-          "TorquePassthroughController: Robot is not in the expected starting position for "
-          "running this example. Run `roslaunch franka_example_controllers move_to_start.launch "
-          "robot_ip:=<robot-ip> load_gripper:=<has-attached-gripper>` first.");
       return false;
     }
   }
@@ -132,7 +115,7 @@ void TorquePassthroughController::update(const ros::Time& /*time*/,
   // send the torques to the hardware
   // echo the command to ensure the values are as intended
   for (size_t i = 0; i < 7; ++i) {
-    // joint_handles_[i].setCommand(u_des_(i));
+    joint_handles_[i].setCommand(u_des_(i));
   }
 
   sensor_msgs::JointState msg;
@@ -187,10 +170,8 @@ void TorquePassthroughController::handleTorqueCommand(
     const std_msgs::Float64MultiArray& msg) {
   
   std::lock_guard<std::mutex> u_des_mutex_lock(u_des_mutex_);
-  std::cout << "received torque message" << std::endl;
   for (int i = 0; i < 7; i++){
     u_des_(i) = msg.data[i];
-    std::cout << "joint " << i << " torque: " << u_des_(i) << std::endl;
   }
 }
 
