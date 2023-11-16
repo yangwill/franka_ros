@@ -45,7 +45,7 @@ bool TorquePassthroughController::init(hardware_interface::RobotHW* robot_hardwa
     state_handle_ = std::make_unique<franka_hw::FrankaStateHandle>(
         state_interface->getHandle(arm_id + "_robot"));
     // Palm up configuration
-    std::array<double, 7> q_start{{-1.3, 1.6, 1.5, -2.1, 1.5, 1.5, -0.8}};
+    std::array<double, 7> q_start{{-1.3, 1.6, 1.6, -2.1, 1.6, 1.6, -0.8}};
     for (size_t i = 0; i < q_start.size(); i++) {
       if (std::abs(state_handle_->getRobotState().q_d[i] - q_start[i]) > 0.1) {
         ROS_ERROR_STREAM(
